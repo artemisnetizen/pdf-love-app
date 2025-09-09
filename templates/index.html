@@ -1,15 +1,30 @@
 <!doctype html>
 <html>
 <head>
-  <title>PDF → DOCX Merger</title>
+  <meta charset="utf-8">
+  <title>PDF Merger</title>
+  <style>
+    body { font-family: Helvetica, sans-serif; background:#f6f6f6; margin:0; display:flex; align-items:center; justify-content:center; min-height:100vh; }
+    .card { background:#fff; padding:2.5rem; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,0.1); width:420px; }
+    h1 { margin-bottom:1rem; color:#222; font-size:1.4rem; }
+    p { margin-bottom:2rem; color:#555; }
+    label { display:block; margin-bottom:.5rem; font-weight:500; }
+    input[type=file] { margin-bottom:1rem; }
+    button { width:100%; background:#4f46e5; color:#fff; border:none; padding:.75rem; border-radius:6px; font-size:1rem; cursor:pointer; font-weight:600; }
+    button:hover { background:#3730a3; }
+  </style>
 </head>
 <body>
-  <h1>Merge Two PDF Files into One Word Document</h1>
-  <form action="/merge" method="post" enctype="multipart/form-data">
-    <label>PDF #1: <input type="file" name="pdf1" accept=".pdf" required></label><br><br>
-    <label>PDF #2: <input type="file" name="pdf2" accept=".pdf" required></label><br><br>
-    <button type="submit">Convert & Merge</button>
-  </form>
-  <p>After processing, the merged DOCX will automatically download.</p>
+  <div class="card">
+    <h1>Merge PDFs into Word</h1>
+    <p>Select two PDF files and download the merged DOCX.</p>
+    <form action="/merge" method="post" enctype="multipart/form-data">
+      <label>First PDF</label>
+      <input type="file" name="pdf1" accept=".pdf" required>
+      <label>Second PDF</label>
+      <input type="file" name="pdf2" accept=".pdf" required>
+      <button type="submit">Merge Files</button>
+    </form>
+  </div>
 </body>
 </html>

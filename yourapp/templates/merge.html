@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Merge 2 PDFs → 1 DOCX</title>
+  <meta name="description" content="Convert and merge two PDF files into a single editable Word document (.docx). Private, fast, and free." />
+  <style>
+    :root{
+      --bg:#f6f6f7; --card:#ffffff; --text:#1f2937; --muted:#6b7280;
+      --primary:#4f46e5; --primary-hover:#4338ca; --border:#e5e7eb; --ring:rgba(79,70,229,.15);
+      --danger:#b91c1c; --success:#065f46;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; background:var(--bg); color:var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      -webkit-font-smoothing:antialiased; line-height:1.5;
+      display:flex; align-items:center; justify-content:center; padding:24px;
+    }
+    .card{width:100%; max-width:720px; background:var(--card); border:1px solid var(--border); border-radius:12px; box-shadow:0 8px 24px rgba(15,23,42,.06); overflow:hidden;}
+    header{padding:20px 24px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px}
+    .logo{width:36px; height:36px; border-radius:8px; background:linear-gradient(135deg,#6366f1,#4338ca); display:inline-flex; align-items:center; justify-content:center; color:white; font-weight:800; box-shadow:0 6px 14px rgba(79,70,229,.35);}
+    header h1{font-size:1.25rem; margin:0}
+    header p{margin:2px 0 0; color:var(--muted); font-size:.95rem}
+    main{padding:24px}
+    .row{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+    @media (max-width:640px){ .row{grid-template-columns:1fr} }
+    .field{border:1px dashed var(--border); border-radius:10px; padding:16px; background:#fafafa}
+    .field label{display:block; font-weight:600; margin-bottom:8px}
+    .hint{color:var(--muted); font-size:.9rem}
+    input[type="file"]{width:100%; padding:10px; background:white; border:1px solid var(--border); border-radius:8px;}
+    input[type="file"]:focus{outline:none; box-shadow:0 0 0 4px var(--ring); border-color:var(--primary)}
+    .actions{display:flex; align-items:center; gap:12px; margin-top:20px}
+    .btn{appearance:none; border:none; background:var(--primary); color:white; font-weight:700; padding:12px 16px; border-radius:8px; cursor:pointer;}
+    .btn:hover{background:var(--primary-hover)} .btn[disabled]{opacity:.6; cursor:not-allowed}
+    .note{color:var(--muted); font-size:.9rem}
+    .error{color:var(--danger); font-weight:600; display:none}
+    .success{color:var(--success); display:none}
+    footer{padding:18px 24px; border-top:1px solid var(--border); background:#fbfbfc; font-size:.9rem; color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <header>
+      <div class="logo" aria-hidden="true">P</div>
+      <div>
+        <h1>Merge 2 PDFs → 1 DOCX</h1>
+        <p>Upload two PDFs, convert to editable Word, and download a single merged .docx</p>
+      </div>
+    </header>
+
+    <main>
+      <form id="mergeForm" action="/merge" method="post" enctype="multipart/form-data" target="_blank" novalidate>
+        <div class="row">
+          <div class="field">
+            <label for="pdf1">First PDF</label>
+            <input id="pdf1" name="pdf1" type="file" accept=".pdf,application/pdf" required />
+            <div class="hint">Max ~100MB. We only process files to create your merged DOCX.</div>
+          </div>
+          <div class="field">
+            <label for="pdf2">Second PDF</label>
+            <input id="pdf2" name="pdf2" type="file" accept=".pdf,application/pdf" required />
+            <div class="hint">Images, tables, and lists are preserved.</div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="mergeBtn" class="btn" type="submit">Convert & Merge</button>
+          <span class="note">Your file will download automatically.</span>
+          <span id="err" class="error" role="alert"></span>
+          <span id="ok" class="success" role="status">Processing… your download will start in a new tab.</span>
+        </div>
+      </form>
+    </main>
+
+    <footer>
+      <a href="/" style="text-decoration:none;color:inherit">← Back to Home</a>
+    </footer>
+  </div>
+
+  <script>
+    const form = document.getElementById('mergeForm');
+    const btn  = document.getElementById('mergeBtn');
+    const pdf1 = document.getElementById('pdf1');
+    const pdf2 = document.getElementById('pdf2');
+    const err  = document.getElementById('err');
+    const ok   = document.getElementById('ok');
+
+    function isPdf(file){
+      return file && (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'));
+    }
+
+    form.addEventListener('submit', (e) => {
+      err.style.display = 'none'; err.textContent = '';
+      if (ok) ok.style.display  = 'none';
+
+      const f1 = pdf1.files[0], f2 = pdf2.files[0];
+      if(!f1 || !f2){
+        e.preventDefault(); err.textContent = 'Please choose two PDF files.'; err.style.display='inline'; return;
+      }
+      if(!isPdf(f1) || !isPdf(f2)){
+        e.preventDefault(); err.textContent = 'Both files must be PDFs (.pdf).'; err.style.display='inline'; return;
+      }
+
+      btn.disabled = true; btn.textContent = 'Processing…';
+      if (ok) ok.style.display = 'inline';
+      setTimeout(() => { btn.disabled = false; btn.textContent = 'Convert & Merge'; }, 6000);
+    });
+  </script>
+</body>
+</html>

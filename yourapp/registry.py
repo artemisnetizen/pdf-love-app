@@ -14,5 +14,11 @@ TOOLS = [
         "description": "Upload two PDFs; we convert each to DOCX and merge into one.",
         "absolute_url": f"{BASE}/merge",
     },
+    {
+    "name": "Split PDF by Ranges",
+    "path": "/split",
+    "description": "Select one or more page ranges and download each as PDF or DOCX.",
+    "absolute_url": f"{BASE}/split",
+    },
     # Add more tools here as you grow
 ]

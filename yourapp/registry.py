@@ -26,5 +26,11 @@ TOOLS = [
     "description": "Extract all web links from your PDF and download them as a DOCX list.",
     "absolute_url": f"{BASE}/identify-urls",
     },
+    {
+    "name": "Sign PDF",
+    "path": "/sign",
+    "description": "Place one or more signatures on any pages, then download the signed PDF.",
+    "absolute_url": f"{BASE}/sign",
+    },
     # Add more tools here as you grow
 ]

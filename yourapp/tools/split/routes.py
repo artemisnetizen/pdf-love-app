@@ -41,11 +41,10 @@ def parse_ranges(req) -> List[Tuple[int, int]]:
 def split_get():
     return render_template("split.html")
 
-import traceback
-# ...
 @bp.route("", methods=["POST"])
 @bp.route("/", methods=["POST"])
 def split_post():
+    import io, tempfile, zipfile, gc, traceback
     try:
         f = request.files.get("file")
         ofmt = (request.form.get("output_format") or "").lower()
@@ -57,18 +56,21 @@ def split_post():
         if ofmt not in {"pdf", "docx"}:
             abort(400, "Please choose an output format: PDF or DOCX.")
 
-        ranges = parse_ranges(request)
+        ranges = parse_ranges(request)  # may raise ValueError
 
         workdir = tempfile.mkdtemp(prefix="split_")
         try:
+            # Save original PDF
             pdf_path = os.path.join(workdir, name)
             f.save(pdf_path)
 
             reader = PdfReader(pdf_path)
             total_pages = len(reader.pages)
+            print(f"[SPLIT] total_pages={total_pages}, requested_ranges={ranges}, ofmt={ofmt}")
             if total_pages < 1:
                 abort(400, "The uploaded PDF appears to be empty.")
 
+            # Clip & normalize ranges
             clipped = []
             for (s, e) in ranges:
                 if s > total_pages:
@@ -79,35 +81,59 @@ def split_post():
             if not clipped:
                 abort(400, "All ranges fall outside the document's page count.")
 
+            # Auto-append remainder if needed
             last_end = max(e for _, e in clipped)
             if last_end < total_pages:
                 clipped.append((last_end + 1, total_pages))
+            print(f"[SPLIT] effective_ranges={clipped}")
 
-            zip_bytes = io.BytesIO()
-            with zipfile.ZipFile(zip_bytes, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            # Use a spooled temp file for ZIP to avoid holding big buffers in RAM
+            zip_spooled = tempfile.SpooledTemporaryFile(max_size=5 * 1024 * 1024)  # 5MB in RAM, then disk
+            with zipfile.ZipFile(zip_spooled, "w", compression=zipfile.ZIP_DEFLATED) as zf:
                 for idx, (s, e) in enumerate(clipped, start=1):
                     writer = PdfWriter()
                     for p in range(s - 1, e):
                         writer.add_page(reader.pages[p])
-                    slice_pdf_path = os.path.join(workdir, f"split_{idx}_{s}-{e}.pdf")
+
+                    slice_name_pdf = f"{Path(name).stem}_part{idx}_{s}-{e}.pdf"
+                    slice_pdf_path = os.path.join(workdir, slice_name_pdf)
                     with open(slice_pdf_path, "wb") as outpdf:
                         writer.write(outpdf)
+                    # free writer/page refs ASAP
+                    del writer
+                    gc.collect()
 
                     if ofmt == "pdf":
-                        zf.write(slice_pdf_path, arcname=Path(slice_pdf_path).name)
+                        zf.write(slice_pdf_path, arcname=slice_name_pdf)
                     else:
-                        slice_docx_path = os.path.join(workdir, f"split_{idx}_{s}-{e}.docx")
+                        # Convert this slice to DOCX
+                        slice_name_docx = f"{Path(name).stem}_part{idx}_{s}-{e}.docx"
+                        slice_docx_path = os.path.join(workdir, slice_name_docx)
                         cv = Converter(slice_pdf_path)
                         cv.convert(slice_docx_path, start=0, end=None)
                         cv.close()
-                        zf.write(slice_docx_path, arcname=Path(slice_docx_path).name)
+                        zf.write(slice_docx_path, arcname=slice_name_docx)
+                        # clean converter refs
+                        del cv
+                        gc.collect()
 
-            zip_bytes.seek(0)
+            # Rewind spooled file for sending
+            zip_spooled.seek(0)
             dl_name = "splits_pdfs.zip" if ofmt == "pdf" else "splits_docx.zip"
-            return send_file(zip_bytes, as_attachment=True, download_name=dl_name, mimetype="application/zip")
+            return send_file(
+                zip_spooled,
+                as_attachment=True,
+                download_name=dl_name,
+                mimetype="application/zip",
+                max_age=0
+            )
         finally:
             shutil.rmtree(workdir, ignore_errors=True)
+
+    except ValueError as ve:
+        print("[/split BAD_RANGE]", str(ve))
+        abort(400, str(ve))
     except Exception as e:
         print("[/split ERROR]", repr(e))
         traceback.print_exc()
-        abort(500, "An error occurred while splitting. Please try a smaller file or fewer ranges.")
+        abort(500, "An error occurred while splitting. Please try PDF output first or smaller ranges.")

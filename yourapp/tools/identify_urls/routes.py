@@ -8,7 +8,7 @@ from werkzeug.utils import secure_filename
 from pypdf import PdfReader
 from docx import Document
 
-bp = Blueprint("identify_urls", __name__, url_prefix="/identify-urls")
+bp = Blueprint("identify_urls", __name__, url_prefix="/identify_urls")
 
 def is_pdf(name: str) -> bool:
     return name.lower().endswith(".pdf")

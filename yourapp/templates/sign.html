@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sign PDF</title>
+  <meta name="description" content="Upload a PDF, click where you want your signature, and download a signed PDF." />
+  <style>
+    :root{
+      --bg:#f6f6f7; --card:#ffffff; --text:#1f2937; --muted:#6b7280;
+      --primary:#4f46e5; --primary-hover:#4338ca; --border:#e5e7eb; --ring:rgba(79,70,229,.15);
+      --danger:#b91c1c; --success:#065f46;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; background:var(--bg); color:var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+      -webkit-font-smoothing:antialiased; line-height:1.5;
+      padding:24px; display:flex; align-items:center; justify-content:center;
+    }
+    .card{width:100%; max-width:980px; background:var(--card); border:1px solid var(--border); border-radius:12px; box-shadow:0 8px 24px rgba(15,23,42,.06); overflow:hidden;}
+    header{padding:20px 24px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px}
+    .logo{width:36px; height:36px; border-radius:8px; background:linear-gradient(135deg,#6366f1,#4338ca); display:inline-flex; align-items:center; justify-content:center; color:white; font-weight:800; box-shadow:0 6px 14px rgba(79,70,229,.35);}
+    header h1{font-size:1.25rem; margin:0}
+    header p{margin:2px 0 0; color:var(--muted); font-size:.95rem}
+    main{padding:24px}
+    .row{display:grid; grid-template-columns:320px 1fr; gap:16px}
+    @media (max-width:900px){ .row{grid-template-columns:1fr} }
+
+    .field{border:1px dashed var(--border); border-radius:10px; padding:16px; background:#fafafa; margin-bottom:12px}
+    .field label{display:block; font-weight:600; margin-bottom:8px}
+    input[type="file"], input[type="text"], input[type="number"], select{
+      width:100%; padding:10px; background:white; border:1px solid var(--border); border-radius:8px;
+    }
+    input:focus, select:focus{outline:none; box-shadow:0 0 0 4px var(--ring); border-color:var(--primary)}
+
+    .viewer{border:1px solid var(--border); border-radius:10px; background:#fff; padding:12px; overflow:auto; max-height:70vh}
+    .canvas-wrap{position:relative; display:inline-block; margin:0 auto 12px; border:1px solid var(--border); border-radius:8px;}
+    .marker{position:absolute; width:18px; height:18px; border-radius:50%; background:rgba(79,70,229,.9); border:2px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,.25); transform:translate(-50%,-50%);}
+
+    .controls{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px}
+    .btn{appearance:none; border:none; background:var(--primary); color:white; font-weight:700; padding:10px 14px; border-radius:8px; cursor:pointer;}
+    .btn:hover{background:var(--primary-hover)}
+    .btn-outline{appearance:none; border:1px solid var(--border); background:#fff; color:var(--text); padding:10px 14px; border-radius:8px; cursor:pointer;}
+    .note{color:var(--muted); font-size:.9rem}
+    .error{color:var(--danger); font-weight:600; display:none}
+    .success{color:var(--success); display:none}
+
+    .sig-preview{border:1px dashed var(--border); border-radius:10px; padding:10px; background:#fff; min-height:90px; display:flex; align-items:center; justify-content:center; font-size:42px; font-family: 'Dancing Script', cursive; color:#141414}
+  </style>
+
+  <!-- Signature webfont just for preview (client-side); backend uses TTF in assets/fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&display=swap" rel="stylesheet">
+
+  <!-- PDF.js (CDN) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.6.82/pdf.min.js" integrity="sha512-XVx0Qn8VtYQeJ4zq8m9gLQ4lhnRFLh0I3x2lVDE0pS3a3fWkZg7B5qM7GQ38h8G7g3o1z9rpl9o1Bz2o8c4S9g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+<body>
+  <div class="card">
+    <header>
+      <div class="logo" aria-hidden="true">P</div>
+      <div>
+        <h1>Sign PDF</h1>
+        <p>Upload, click where you want signatures, preview your signature, and download the signed PDF.</p>
+      </div>
+    </header>
+
+    <main>
+      <div class="row">
+        <div>
+          <div class="field">
+            <label for="file">Choose PDF</label>
+            <input id="file" type="file" accept=".pdf,application/pdf" />
+            <div class="note">We render it locally in your browser to choose signature positions.</div>
+          </div>
+
+          <div class="field">
+            <label for="full_name">Your full name</label>
+            <input id="full_name" type="text" placeholder="e.g., Jane A. Doe" />
+            <div class="sig-preview" id="sigPreview">Jane A. Doe</div>
+            <div class="note">Preview is for placement only; the server uses a similar cursive font.</div>
+          </div>
+
+          <div class="field">
+            <label for="sig_width_pt">Signature width (points)</label>
+            <input id="sig_width_pt" type="number" min="80" max="600" value="200" />
+            <div class="note">1 point = 1/72 inch. 200 pt ≈ 2.8 inches wide.</div>
+          </div>
+
+          <div class="controls">
+            <button class="btn-outline" type="button" id="prevBtn">Prev page</button>
+            <button class="btn-outline" type="button" id="nextBtn">Next page</button>
+            <button class="btn" type="button" id="finishBtn">Finish & Sign</button>
+            <span id="err" class="error" role="alert"></span>
+            <span id="ok" class="success" role="status">Processing…</span>
+          </div>
+        </div>
+
+        <div class="viewer" id="viewer"></div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('file');
+    const viewer = document.getElementById('viewer');
+    const fullName = document.getElementById('full_name');
+    const sigPreview = document.getElementById('sigPreview');
+    const sigWidthPt = document.getElementById('sig_width_pt');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const finishBtn = document.getElementById('finishBtn');
+    const err = document.getElementById('err');
+    const ok = document.getElementById('ok');
+
+    let pdfDoc = null;
+    let currentPage = 1;
+    let pageCanvases = []; // {canvas, wrap, markers:[], scale}
+    let placements = [];   // {page_index, x_norm, y_norm}
+
+    // Signature preview update
+    fullName.addEventListener('input', () => {
+      sigPreview.textContent = fullName.value || 'Jane A. Doe';
+    });
+
+    function showError(msg){
+      err.textContent = msg; err.style.display = 'inline';
+      ok.style.display = 'none';
+    }
+    function clearError(){
+      err.textContent = ''; err.style.display = 'none';
+    }
+
+    fileInput.addEventListener('change', async () => {
+      clearError();
+      viewer.innerHTML = '';
+      placements = [];
+      pageCanvases = [];
+      currentPage = 1;
+
+      const f = fileInput.files[0];
+      if (!f) return;
+      if (!(f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))) {
+        showError('Please upload a PDF.'); return;
+      }
+
+      const arrayBuf = await f.arrayBuffer();
+      const loadingTask = window.pdfjsLib.getDocument({ data: arrayBuf });
+      pdfDoc = await loadingTask.promise;
+
+      // Render all pages as canvases
+      for (let p = 1; p <= pdfDoc.numPages; p++) {
+        const page = await pdfDoc.getPage(p);
+        // fit width ~640px
+        const viewport = page.getViewport({ scale: 1.0 });
+        const scale = 640 / viewport.width;
+        const scaled = page.getViewport({ scale });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(scaled.width);
+        canvas.height = Math.round(scaled.height);
+
+        const ctx = canvas.getContext('2d');
+        await page.render({ canvasContext: ctx, viewport: scaled }).promise;
+
+        const wrap = document.createElement('div');
+        wrap.className = 'canvas-wrap';
+        wrap.style.width = canvas.width + 'px';
+        wrap.style.height = canvas.height + 'px';
+        wrap.appendChild(canvas);
+
+        // click to add marker
+        wrap.addEventListener('click', (ev) => {
+          const rect = canvas.getBoundingClientRect();
+          const x = ev.clientX - rect.left;
+          const y = ev.clientY - rect.top;
+          const x_norm = x / canvas.width;
+          const y_norm = y / canvas.height;
+
+          // Store placement (0-based page index)
+          placements.push({ page_index: p - 1, x_norm, y_norm });
+
+          // Visual marker
+          const m = document.createElement('div');
+          m.className = 'marker';
+          m.style.left = (x) + 'px';
+          m.style.top = (y) + 'px';
+          wrap.appendChild(m);
+
+          clearError();
+        });
+
+        pageCanvases.push({ canvas, wrap, markers: [], scale });
+        viewer.appendChild(wrap);
+      }
+
+      // Scroll to first page
+      viewer.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    prevBtn.addEventListener('click', () => {
+      if (!pdfDoc) return;
+      const idx = Math.max(0, currentPage - 2);
+      currentPage = idx + 1;
+      pageCanvases[idx].wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    nextBtn.addEventListener('click', () => {
+      if (!pdfDoc) return;
+      const idx = Math.min(pdfDoc.numPages - 1, currentPage);
+      currentPage = idx + 1;
+      pageCanvases[idx].wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    // Track current page during scroll
+    viewer.addEventListener('scroll', () => {
+      if (!pdfDoc) return;
+      // naive: set currentPage to first page mostly visible
+      for (let i = 0; i < pageCanvases.length; i++) {
+        const r = pageCanvases[i].wrap.getBoundingClientRect();
+        const vr = viewer.getBoundingClientRect();
+        const visible = r.top < vr.bottom && r.bottom > vr.top;
+        if (visible) { currentPage = i + 1; break; }
+      }
+    });
+
+    finishBtn.addEventListener('click', async () => {
+      clearError();
+      const f = fileInput.files[0];
+      const name = (fullName.value || '').trim();
+      const widthPt = parseFloat(sigWidthPt.value || '200');
+
+      if (!f) return showError('Please choose a PDF first.');
+      if (!name) return showError('Please enter your full name.');
+      if (!placements.length) return showError('Click on the page to add at least one signature position.');
+
+      // POST to /sign with file + placements + name
+      try {
+        ok.style.display = 'inline';
+        const fd = new FormData();
+        fd.append('file', f, f.name);
+        fd.append('full_name', name);
+        fd.append('sig_width_pt', String(widthPt));
+        fd.append('placements_json', JSON.stringify(placements));
+
+        const res = await fetch('/sign', { method: 'POST', body: fd });
+        ok.style.display = 'none';
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(t || 'Server error');
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const stem = f.name.replace(/\.pdf$/i, '');
+        a.href = url;
+        a.download = `${stem}_signed.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        URL.revokeObjectURL(url);
+        a.remove();
+      } catch (e) {
+        showError('Signing failed. Please try again.');
+        console.error(e);
+      }
+    });
+
+    // Initialize preview text
+    sigPreview.textContent = 'Jane A. Doe';
+  </script>
+</body>
+</html>

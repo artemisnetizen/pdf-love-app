@@ -55,7 +55,14 @@
           <input id="file" name="file" type="file" accept=".pdf,application/pdf" required />
           <div class="note">Text-only extraction (no OCR). For scanned PDFs, links may not be detected.</div>
         </div>
-
+        <div class="field">
+          <label>Output format</label>
+          <div class="radio" style="display:flex;gap:16px;align-items:center">
+            <label><input type="radio" name="output_format" value="pdf" checked /> PDF (recommended)</label>
+            <label><input type="radio" name="output_format" value="docx" /> DOCX</label>
+          </div>
+          <div class="note">PDF links are reliably clickable in most viewers. DOCX links depend on Word settings.</div>
+        </div>
         <div class="actions">
           <button id="urlsBtn" class="btn" type="submit">Identify URLs</button>
           <span id="err" class="error" role="alert"></span>

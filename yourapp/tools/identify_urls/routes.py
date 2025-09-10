@@ -8,6 +8,12 @@ from werkzeug.utils import secure_filename
 from pypdf import PdfReader
 from docx import Document
 
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.lib.colors import blue, black
+
 bp = Blueprint("identify_urls", __name__, url_prefix="/identify-urls")
 
 def is_pdf(name: str) -> bool:
@@ -46,6 +52,7 @@ def urls_get():
 @bp.route("", methods=["POST"])
 @bp.route("/", methods=["POST"])
 def urls_post():
+    import io, shutil, tempfile, traceback
     try:
         f = request.files.get("file")
         if not f or not f.filename:
@@ -56,61 +63,102 @@ def urls_post():
 
         workdir = tempfile.mkdtemp(prefix="urls_")
         try:
+            # 1) Save upload
             pdf_path = os.path.join(workdir, name)
             f.save(pdf_path)
 
-            # Extract text from each page (no OCR; text layer only)
+            # 2) Extract text → collect URLs (no OCR)
             reader = PdfReader(pdf_path, strict=False)
             total_pages = len(reader.pages)
             if total_pages < 1:
                 abort(400, "The uploaded PDF appears to be empty.")
 
-            urls: Set[str] = set()
+            urls = set()
             for i in range(total_pages):
                 try:
-                    page = reader.pages[i]
-                    text = page.extract_text() or ""
+                    text = (reader.pages[i].extract_text() or "")
                     for u in extract_urls_from_text(text):
                         urls.add(u)
                 except Exception as ex:
-                    # Continue past a bad page; log for server diagnostics
-                    print(f"[IDENTIFY_URLS] page {i+1} error: {ex}")
+                    # keep going if a page fails to extract
+                    print(f"[IDENTIFY_URLS] page {i+1} extract error: {ex}")
 
-            # Build the DOCX in-memory
-            doc = Document()
             stem = Path(name).stem
-            doc.add_heading(f'URLs found in "{stem}.pdf"', level=1)
+            ofmt = (request.form.get("output_format") or "pdf").lower()
 
+            # 3) Output as PDF (recommended): clickable hyperlinks via ReportLab
+            if ofmt == "pdf":
+                buf = io.BytesIO()
+                doc = SimpleDocTemplate(
+                    buf, pagesize=A4,
+                    leftMargin=20*mm, rightMargin=20*mm, topMargin=20*mm, bottomMargin=20*mm
+                )
+                styles = getSampleStyleSheet()
+                h1 = styles["Heading1"]
+                body = styles["BodyText"]
+                link_style = ParagraphStyle("LinkBody", parent=body, textColor=blue)
+
+                story = []
+                story.append(Paragraph(f'URLs found in "{stem}.pdf"', h1))
+                if urls:
+                    story.append(Paragraph(f"Total unique URLs: {len(urls)}", body))
+                    story.append(Spacer(1, 6))
+                    for u in sorted(urls, key=str.lower):
+                        nu = normalize_url(u)
+                        story.append(Paragraph(f'<link href="{nu}">{nu}</link>', link_style))
+                        story.append(Spacer(1, 2))
+                else:
+                    story.append(Paragraph("No URLs were found in the text of this PDF.", body))
+                    story.append(Paragraph("(Note: scanned PDFs/images need OCR; text-only extraction was used.)", body))
+
+                doc.build(story)
+                buf.seek(0)
+                return send_file(
+                    buf,
+                    as_attachment=True,
+                    download_name=f"{stem}_URLs.pdf",
+                    mimetype="application/pdf",
+                )
+
+            # 4) Output as DOCX: clickable hyperlinks with XML + field fallback
+            docx_buf = io.BytesIO()
+            doc = Document()
+            doc.add_heading(f'URLs found in "{stem}.pdf"', level=1)
             if urls:
                 doc.add_paragraph(f"Total unique URLs: {len(urls)}")
-                doc.add_paragraph("(Each link below is inserted as a clickable hyperlink. "
-                                  "If your Word viewer strips the style, URLs are still plain text and clickable.)")
+                doc.add_paragraph(
+                    "(Links below are inserted as clickable hyperlinks. "
+                    "If your viewer disables them, they will still display as plain URLs.)"
+                )
                 for u in sorted(urls, key=str.lower):
                     p = doc.add_paragraph()
                     try:
-                        add_hyperlink(p, u)  # real hyperlink XML
+                        add_hyperlink(p, u)              # primary (relationship hyperlink)
                     except Exception as ex:
-                        # fallback: just plain text
-                        print(f"[IDENTIFY_URLS fallback] could not hyperlink {u}: {ex}")
-                        p.add_run(u)
+                        print(f"[IDENTIFY_URLS primary failed] {u}: {ex}")
+                        try:
+                            add_hyperlink_field(p, u)     # fallback (field code)
+                        except Exception as ex2:
+                            print(f"[IDENTIFY_URLS fallback failed] {u}: {ex2}")
+                            p.add_run(normalize_url(u))   # last resort: plaintext
             else:
                 doc.add_paragraph("No URLs were found in the text of this PDF.")
                 doc.add_paragraph("(Note: scanned PDFs/images need OCR; text-only extraction was used.)")
 
             out_name = f"{stem}_URLs.docx"
-            buffer = io.BytesIO()
-            doc.save(buffer)
-            buffer.seek(0)
-
-            # Return the DOCX; temp directory (including uploaded PDF) is removed below
+            doc.save(docx_buf)
+            docx_buf.seek(0)
             return send_file(
-                buffer,
+                docx_buf,
                 as_attachment=True,
                 download_name=out_name,
                 mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             )
+
         finally:
+            # delete uploaded PDF + temps
             shutil.rmtree(workdir, ignore_errors=True)
+
     except Exception as e:
         print("[/identify-urls ERROR]", repr(e))
         traceback.print_exc()

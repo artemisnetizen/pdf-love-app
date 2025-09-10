@@ -53,12 +53,12 @@
   <!-- Signature webfont just for preview (client-side); backend uses TTF in assets/fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&display=swap" rel="stylesheet">
 
-  <!-- PDF.js (CDN) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.6.82/pdf.min.js" integrity="sha512-XVx0Qn8VtYQeJ4zq8m9gLQ4lhnRFLh0I3x2lVDE0pS3a3fWkZg7B5qM7GQ38h8G7g3o1z9rpl9o1Bz2o8c4S9g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <!-- PDF.js (core) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.6.82/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <!-- PDF.js (worker) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.6.82/pdf.worker.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <!-- PDF.js (stable UMD build) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script>
+    // Set the worker source BEFORE calling getDocument()
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  </script>
 </head>
 <body>
   <div class="card">
@@ -105,7 +105,180 @@
       </div>
     </main>
   </div>
+  <script>
+    const fileInput = document.getElementById('file');
+    const viewer = document.getElementById('viewer');
+    const fullName = document.getElementById('full_name');
+    const sigPreview = document.getElementById('sigPreview');
+    const sigWidthPt = document.getElementById('sig_width_pt');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const finishBtn = document.getElementById('finishBtn');
+    const err = document.getElementById('err');
+    const ok = document.getElementById('ok');
 
+    let pdfDoc = null;
+    let currentPage = 1;
+    let pageWraps = [];
+
+    function showError(msg){
+      err.textContent = msg; err.style.display = 'inline';
+      ok.style.display = 'none';
+    }
+    function clearError(){ err.textContent = ''; err.style.display = 'none'; }
+
+      // Signature preview
+      fullName.addEventListener('input', () => {
+      sigPreview.textContent = fullName.value || 'Jane A. Doe';
+      });
+
+    async function renderPdfFromArrayBuffer(arrayBuf){
+      viewer.innerHTML = '';
+      pageWraps = [];
+      currentPage = 1;
+
+      console.log('[PDFJS] loading...');
+      const task = pdfjsLib.getDocument({ data: arrayBuf });
+      pdfDoc = await task.promise;
+      console.log('[PDFJS] loaded. pages =', pdfDoc.numPages);
+
+      for(let p=1; p<=pdfDoc.numPages; p++){
+        const page = await pdfDoc.getPage(p);
+        const viewport = page.getViewport({ scale: 1.0 });
+        const scale = Math.min(640 / viewport.width, 1.5); // keep quality reasonable
+        const scaled = page.getViewport({ scale });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.ceil(scaled.width);
+        canvas.height = Math.ceil(scaled.height);
+        const ctx = canvas.getContext('2d', { alpha: false });
+
+        const wrap = document.createElement('div');
+        wrap.className = 'canvas-wrap';
+        wrap.style.width = canvas.width + 'px';
+        wrap.style.height = canvas.height + 'px';
+        wrap.appendChild(canvas);
+
+        wrap.addEventListener('click', (ev) => {
+          const rect = canvas.getBoundingClientRect();
+          const x = ev.clientX - rect.left;
+          const y = ev.clientY - rect.top;
+          const x_norm = x / canvas.width;
+          const y_norm = y / canvas.height;
+
+          // store on the wrapper (we collect later on submit)
+          const m = document.createElement('div');
+          m.className = 'marker';
+          m.style.left = x + 'px';
+          m.style.top = y + 'px';
+          m.dataset.pageIndex = String(p-1);
+          m.dataset.xnorm = String(x_norm);
+          m.dataset.ynorm = String(y_norm);
+          wrap.appendChild(m);
+          clearError();
+        });
+
+        viewer.appendChild(wrap);
+        pageWraps.push(wrap);
+
+        await page.render({ canvasContext: ctx, viewport: scaled }).promise;
+        console.log(`[PDFJS] rendered page ${p}`);
+      }
+
+      // scroll top to show first page
+      viewer.scrollTo({ top: 0 });
+    }
+
+    fileInput.addEventListener('change', async () => {
+      try {
+        clearError();
+        const f = fileInput.files[0];
+        if(!f){ return; }
+        if(!(f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))){
+          showError('Please upload a PDF.'); return;
+        }
+        const buf = await f.arrayBuffer();
+        await renderPdfFromArrayBuffer(buf);
+      } catch (e) {
+      console.error('[PDFJS] render error', e);
+      showError('Could not render this PDF in the browser.');
+      }
+    });
+
+    prevBtn.addEventListener('click', () => {
+      if(!pdfDoc) return;
+      const idx = Math.max(0, currentPage - 2);
+      currentPage = idx + 1;
+      pageWraps[idx]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    nextBtn.addEventListener('click', () => {
+      if(!pdfDoc) return;
+      const idx = Math.min(pdfDoc.numPages - 1, currentPage);
+      currentPage = idx + 1;
+      pageWraps[idx]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    viewer.addEventListener('scroll', () => {
+      if(!pdfDoc) return;
+      const vr = viewer.getBoundingClientRect();
+      for(let i=0;i<pageWraps.length;i++){
+        const r = pageWraps[i].getBoundingClientRect();
+        if (r.top < vr.bottom && r.bottom > vr.top) { currentPage = i+1; break; }
+      }
+    });
+
+    finishBtn.addEventListener('click', async () => {
+      clearError();
+      const f = fileInput.files[0];
+      const name = (document.getElementById('full_name').value || '').trim();
+      const widthPt = parseFloat(document.getElementById('sig_width_pt').value || '200');
+
+      if(!f) return showError('Please choose a PDF first.');
+      if(!name) return showError('Please enter your full name.');
+
+      // collect placements from markers
+      const placements = [];
+      for(const wrap of pageWraps){
+        for(const m of wrap.querySelectorAll('.marker')){
+          placements.push({
+            page_index: parseInt(m.dataset.pageIndex, 10),
+            x_norm: parseFloat(m.dataset.xnorm),
+            y_norm: parseFloat(m.dataset.ynorm)
+          });
+        }
+      }
+      if(!placements.length) return showError('Click on the page to add at least one signature position.');
+
+      try {
+        ok.style.display = 'inline';
+        const fd = new FormData();
+        fd.append('file', f, f.name);
+        fd.append('full_name', name);
+        fd.append('sig_width_pt', String(widthPt));
+        fd.append('placements_json', JSON.stringify(placements));
+
+        const res = await fetch('/sign', { method: 'POST', body: fd });
+        ok.style.display = 'none';
+        if(!res.ok){ throw new Error(await res.text()); }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const stem = f.name.replace(/\.pdf$/i, '');
+        a.href = url; a.download = `${stem}_signed.pdf`;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      } catch (e){
+        console.error(e);
+        showError('Signing failed. Please try again.');
+      }
+    });
+
+    // init preview
+    sigPreview.textContent = 'Jane A. Doe';
+  </script>
+
+
+  
   <script>
     const fileInput = document.getElementById('file');
     const viewer = document.getElementById('viewer');

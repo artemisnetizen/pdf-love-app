@@ -55,6 +55,10 @@
 
   <!-- PDF.js (CDN) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.6.82/pdf.min.js" integrity="sha512-XVx0Qn8VtYQeJ4zq8m9gLQ4lhnRFLh0I3x2lVDE0pS3a3fWkZg7B5qM7GQ38h8G7g3o1z9rpl9o1Bz2o8c4S9g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <!-- PDF.js (core) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.6.82/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <!-- PDF.js (worker) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.6.82/pdf.worker.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 </head>
 <body>
   <div class="card">
@@ -147,6 +151,7 @@
 
       const arrayBuf = await f.arrayBuffer();
       const loadingTask = window.pdfjsLib.getDocument({ data: arrayBuf });
+      loadingTask.promise.then(() => console.log("[PDFJS] loaded OK")).catch(e => console.error("[PDFJS] load error", e));
       pdfDoc = await loadingTask.promise;
 
       // Render all pages as canvases

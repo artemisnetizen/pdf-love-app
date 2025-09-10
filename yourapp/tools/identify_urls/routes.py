@@ -80,11 +80,19 @@ def urls_post():
             doc = Document()
             stem = Path(name).stem
             doc.add_heading(f'URLs found in "{stem}.pdf"', level=1)
+
             if urls:
                 doc.add_paragraph(f"Total unique URLs: {len(urls)}")
+                doc.add_paragraph("(Each link below is inserted as a clickable hyperlink. "
+                                  "If your Word viewer strips the style, URLs are still plain text and clickable.)")
                 for u in sorted(urls, key=str.lower):
-                    # Plaintext; python-docx hyperlinks require XML fiddling—plaintext is robust & clickable in Word
-                    p = doc.add_paragraph(u)
+                    p = doc.add_paragraph()
+                    try:
+                        add_hyperlink(p, u)  # real hyperlink XML
+                    except Exception as ex:
+                        # fallback: just plain text
+                        print(f"[IDENTIFY_URLS fallback] could not hyperlink {u}: {ex}")
+                        p.add_run(u)
             else:
                 doc.add_paragraph("No URLs were found in the text of this PDF.")
                 doc.add_paragraph("(Note: scanned PDFs/images need OCR; text-only extraction was used.)")

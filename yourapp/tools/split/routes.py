@@ -1,6 +1,7 @@
 import os, io, tempfile, shutil, zipfile
 from pathlib import Path
 from typing import List, Tuple
+import traceback
 
 from flask import Blueprint, render_template, request, send_file, abort
 from werkzeug.utils import secure_filename
@@ -40,91 +41,73 @@ def parse_ranges(req) -> List[Tuple[int, int]]:
 def split_get():
     return render_template("split.html")
 
+import traceback
+# ...
 @bp.route("", methods=["POST"])
 @bp.route("/", methods=["POST"])
 def split_post():
-    """
-    Inputs:
-      - file: PDF
-      - start[] / end[]: multiple ranges (1-based inclusive)
-      - output_format: 'pdf' or 'docx'
-    Behavior:
-      - If the final range end < total_pages, auto-append remainder (last_end+1 .. total_pages).
-      - Return a ZIP of outputs (one file per range).
-    """
-    f = request.files.get("file")
-    ofmt = (request.form.get("output_format") or "").lower()
-    if not f or not f.filename:
-        abort(400, "Please upload a PDF file.")
-    name = secure_filename(f.filename)
-    if not is_pdf(name):
-        abort(400, "Only PDF files are accepted.")
-    if ofmt not in {"pdf", "docx"}:
-        abort(400, "Please choose an output format: PDF or DOCX.")
-
     try:
+        f = request.files.get("file")
+        ofmt = (request.form.get("output_format") or "").lower()
+        if not f or not f.filename:
+            abort(400, "Please upload a PDF file.")
+        name = secure_filename(f.filename)
+        if not is_pdf(name):
+            abort(400, "Only PDF files are accepted.")
+        if ofmt not in {"pdf", "docx"}:
+            abort(400, "Please choose an output format: PDF or DOCX.")
+
         ranges = parse_ranges(request)
-    except ValueError as e:
-        abort(400, str(e))
 
-    workdir = tempfile.mkdtemp(prefix="split_")
-    try:
-        # Save original PDF
-        pdf_path = os.path.join(workdir, name)
-        f.save(pdf_path)
+        workdir = tempfile.mkdtemp(prefix="split_")
+        try:
+            pdf_path = os.path.join(workdir, name)
+            f.save(pdf_path)
 
-        # Read total pages
-        reader = PdfReader(pdf_path)
-        total_pages = len(reader.pages)
-        if total_pages < 1:
-            abort(400, "The uploaded PDF appears to be empty.")
+            reader = PdfReader(pdf_path)
+            total_pages = len(reader.pages)
+            if total_pages < 1:
+                abort(400, "The uploaded PDF appears to be empty.")
 
-        # Clip ranges to total pages and validate
-        clipped = []
-        for (s, e) in ranges:
-            if s > total_pages:
-                continue
-            e = min(e, total_pages)
-            if e >= s:
-                clipped.append((s, e))
-        if not clipped:
-            abort(400, "All ranges fall outside the document's page count.")
+            clipped = []
+            for (s, e) in ranges:
+                if s > total_pages:
+                    continue
+                e = min(e, total_pages)
+                if e >= s:
+                    clipped.append((s, e))
+            if not clipped:
+                abort(400, "All ranges fall outside the document's page count.")
 
-        # Auto-append remainder if last end < total_pages
-        last_end = max(e for _, e in clipped)
-        if last_end < total_pages:
-            clipped.append((last_end + 1, total_pages))
+            last_end = max(e for _, e in clipped)
+            if last_end < total_pages:
+                clipped.append((last_end + 1, total_pages))
 
-        # Build outputs per range
-        zip_bytes = io.BytesIO()
-        with zipfile.ZipFile(zip_bytes, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            for idx, (s, e) in enumerate(clipped, start=1):
-                # Create a PDF slice (inclusive, 1-based)
-                writer = PdfWriter()
-                for p in range(s - 1, e):
-                    writer.add_page(reader.pages[p])
-                slice_pdf_path = os.path.join(workdir, f"split_{idx}_{s}-{e}.pdf")
-                with open(slice_pdf_path, "wb") as outpdf:
-                    writer.write(outpdf)
+            zip_bytes = io.BytesIO()
+            with zipfile.ZipFile(zip_bytes, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for idx, (s, e) in enumerate(clipped, start=1):
+                    writer = PdfWriter()
+                    for p in range(s - 1, e):
+                        writer.add_page(reader.pages[p])
+                    slice_pdf_path = os.path.join(workdir, f"split_{idx}_{s}-{e}.pdf")
+                    with open(slice_pdf_path, "wb") as outpdf:
+                        writer.write(outpdf)
 
-                if ofmt == "pdf":
-                    # Add the slice PDF to the ZIP
-                    zf.write(slice_pdf_path, arcname=Path(slice_pdf_path).name)
-                else:
-                    # Convert this slice to DOCX and add to ZIP
-                    slice_docx_path = os.path.join(workdir, f"split_{idx}_{s}-{e}.docx")
-                    cv = Converter(slice_pdf_path)
-                    cv.convert(slice_docx_path, start=0, end=None)
-                    cv.close()
-                    zf.write(slice_docx_path, arcname=Path(slice_docx_path).name)
+                    if ofmt == "pdf":
+                        zf.write(slice_pdf_path, arcname=Path(slice_pdf_path).name)
+                    else:
+                        slice_docx_path = os.path.join(workdir, f"split_{idx}_{s}-{e}.docx")
+                        cv = Converter(slice_pdf_path)
+                        cv.convert(slice_docx_path, start=0, end=None)
+                        cv.close()
+                        zf.write(slice_docx_path, arcname=Path(slice_docx_path).name)
 
-        zip_bytes.seek(0)
-        dl_name = "splits_pdfs.zip" if ofmt == "pdf" else "splits_docx.zip"
-        return send_file(
-            zip_bytes,
-            as_attachment=True,
-            download_name=dl_name,
-            mimetype="application/zip",
-        )
-    finally:
-        shutil.rmtree(workdir, ignore_errors=True)
+            zip_bytes.seek(0)
+            dl_name = "splits_pdfs.zip" if ofmt == "pdf" else "splits_docx.zip"
+            return send_file(zip_bytes, as_attachment=True, download_name=dl_name, mimetype="application/zip")
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
+    except Exception as e:
+        print("[/split ERROR]", repr(e))
+        traceback.print_exc()
+        abort(500, "An error occurred while splitting. Please try a smaller file or fewer ranges.")

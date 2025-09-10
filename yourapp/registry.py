@@ -20,5 +20,11 @@ TOOLS = [
     "description": "Select one or more page ranges and download each as PDF or DOCX.",
     "absolute_url": f"{BASE}/split",
     },
+    {
+    "name": "Identify URLs in a PDF",
+    "path": "/identify-urls",
+    "description": "Extract all web links from your PDF and download them as a DOCX list.",
+    "absolute_url": f"{BASE}/identify-urls",
+    },
     # Add more tools here as you grow
 ]

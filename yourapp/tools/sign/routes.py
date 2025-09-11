@@ -139,13 +139,16 @@ def make_signature_png(full_name: str, px_width: int = 800, px_height: int = 220
 
 def paste_signature_on_pdf(
         
-    font_name = ensure_signature_font_registered(),
+    
     
     pdf_path: str,
     placements: List[Dict[str, Any]],
     full_name: str,
     sig_width_pt: float,
 ) -> bytes:
+
+    font_name = ensure_signature_font_registered()
+    
     """
     Draw the signature as vector text (no PNG) using the embedded TTF.
     placements: list of {page_index, x_norm, y_norm} with top-left normalized coords (0..1).

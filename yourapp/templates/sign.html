@@ -257,7 +257,7 @@
         fd.append('sig_width_pt', String(widthPt));
         fd.append('placements_json', JSON.stringify(placements));
 
-        const res = await fetch('/sign', { method: 'POST', body: fd });
+        const res = await fetch('/sign-pdf', { method: 'POST', body: fd });
         ok.style.display = 'none';
         if(!res.ok){ throw new Error(await res.text()); }
         const blob = await res.blob();

@@ -29,6 +29,7 @@ def ensure_signature_font_registered():
         if _SIGNATURE_FONT_NAME not in pdfmetrics.getRegisteredFontNames():
             if not os.path.exists(FONT_PATH):
                 raise FileNotFoundError(f"Signature font not found at {FONT_PATH}")
+                print(f"[SIGN] Could not register fonts ({FONT_PATH}): {e}. Falling back to Helvetica.")
             pdfmetrics.registerFont(TTFont(_SIGNATURE_FONT_NAME, FONT_PATH))
         return _SIGNATURE_FONT_NAME
     except Exception as e:

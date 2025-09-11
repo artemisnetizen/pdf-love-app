@@ -34,7 +34,7 @@ def ensure_signature_font_registered():
     except Exception as e:
         # As a last resort, fall back to Helvetica (will look non-cursive)
         print(f"[SIGN] Could not register font ({FONT_PATH}): {e}. Falling back to Helvetica.")
-        return "Great_Vibes"
+        return "Helvetica"
 
 def is_pdf(name: str) -> bool:
     return name.lower().endswith(".pdf")

@@ -8,7 +8,7 @@ from werkzeug.utils import secure_filename
 # Lazy-import pypdf here (lightweight)
 from pypdf import PdfReader, PdfWriter
 
-bp = Blueprint("split", __name__, url_prefix="/split")
+bp = Blueprint("split", __name__, url_prefix="/split-pdf")
 
 def is_pdf(name: str) -> bool:
     return name.lower().endswith(".pdf")

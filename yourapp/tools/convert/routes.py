@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, request, send_file, abort
 from werkzeug.utils import secure_filename
 from pdf2docx import Converter
 
-bp = Blueprint("convert", __name__, url_prefix="/convert")
+bp = Blueprint("convert", __name__, url_prefix="/convert-pdf")
 
 def is_pdf(name: str) -> bool:
     return Path(name).suffix.lower() == ".pdf"

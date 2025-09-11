@@ -147,6 +147,7 @@ def paste_signature_on_pdf(
     sig_width_pt: float,
 ) -> bytes:
 
+    txt = full_name.strip() or "Signature"
     font_name = ensure_signature_font_registered()
     
     """
@@ -177,30 +178,23 @@ def paste_signature_on_pdf(
             overlay_bytes = io.BytesIO()
             c = canvas.Canvas(overlay_bytes, pagesize=(page_w, page_h))
 
-            # Compute a font size that fits the requested width
-            # Try from a large size down until stringWidth <= sig_width_pt
-            candidate_size = 120
-            txt = full_name.strip() or "Signature"
-            # Guard against zero width string
-            string_w = pdfmetrics.stringWidth(txt, font_name, candidate_size) or 1.0
-            if string_w < sig_width_pt:
-                # scale up proportionally
-                candidate_size = max(10, candidate_size * (sig_width_pt / string_w))
+            # Start with a guess, scale to target width, clamp to [4, 300] pt
+            candidate_size = 120.0
+            w = pdfmetrics.stringWidth(txt, font_name, candidate_size) or 1.0
+            scale = sig_width_pt / w
+            candidate_size = max(4.0, min(candidate_size * scale, 300.0))
 
-            # refine to not exceed
-            for _ in range(12):
-                w = pdfmetrics.stringWidth(txt, font_name, candidate_size)
-                if w <= sig_width_pt or candidate_size <= 10:
+            # Fine-tune downward so we don't exceed requested width
+            for _ in range(20):
+                w = pdfmetrics.stringWidth(txt, font_name, candidate_size) or 0.1
+                if w <= sig_width_pt or candidate_size <= 4.0:
                     break
-                candidate_size -= max(1, candidate_size * 0.08)
-
+                candidate_size = max(4.0, candidate_size * 0.92)
+            
             c.setFont(font_name, candidate_size)
-            # Optional: darker gray looks more “ink-like”
-            c.setFillGray(0.1)
-
-            # approximate ascent to convert top-left to baseline Y
+            c.setFillGray(0.1)  # ink-like
             ascent_approx = candidate_size * 0.80
-
+            
             for (x_norm, y_norm) in by_page[page_index]:
                 x_pt = x_norm * page_w
                 y_top_pt = y_norm * page_h

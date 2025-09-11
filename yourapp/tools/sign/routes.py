@@ -14,7 +14,7 @@ from PIL import Image, ImageDraw, ImageFont
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont, TTFError
 
-bp = Blueprint("sign", __name__, url_prefix="/sign")
+bp = Blueprint("sign", __name__, url_prefix="/sign-pdf")
 
 DEFAULT_FONT_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "assets", "fonts", "Signature.ttf")

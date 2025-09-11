@@ -139,7 +139,7 @@ def make_signature_png(full_name: str, px_width: int = 800, px_height: int = 220
 
 def paste_signature_on_pdf(
         
-    font_name = ensure_signature_font_registered()
+    font_name = ensure_signature_font_registered(),
     
     pdf_path: str,
     placements: List[Dict[str, Any]],

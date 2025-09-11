@@ -4,21 +4,21 @@ BASE = "https://www.ihatepdf.co"  # change if needed
 TOOLS = [
     {
         "name": "Convert PDF → DOCX",
-        "path": "/convert",
+        "path": "/convert-pdf",
         "description": "Upload one PDF and download an editable Word document.",
-        "absolute_url": f"{BASE}/convert",
+        "absolute_url": f"{BASE}/convert-pdf",
     },
     {
         "name": "Merge 2 PDFs → 1 DOCX",
-        "path": "/merge",
+        "path": "/merge-pdf",
         "description": "Upload two PDFs; we convert each to DOCX and merge into one.",
-        "absolute_url": f"{BASE}/merge",
+        "absolute_url": f"{BASE}/merge-pdf",
     },
     {
     "name": "Split PDF by Ranges",
-    "path": "/split",
+    "path": "/split-pdf",
     "description": "Select one or more page ranges and download each as PDF or DOCX.",
-    "absolute_url": f"{BASE}/split",
+    "absolute_url": f"{BASE}/split-pdf",
     },
     {
     "name": "Identify URLs in a PDF",
@@ -28,9 +28,9 @@ TOOLS = [
     },
     {
     "name": "Sign PDF",
-    "path": "/sign",
+    "path": "/sign-pdf",
     "description": "Place one or more signatures on any pages, then download the signed PDF.",
-    "absolute_url": f"{BASE}/sign",
+    "absolute_url": f"{BASE}/sign-pdf",
     },
     # Add more tools here as you grow
 ]

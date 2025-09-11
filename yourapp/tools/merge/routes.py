@@ -6,7 +6,7 @@ from pdf2docx import Converter
 from docx import Document
 from docxcompose.composer import Composer
 
-bp = Blueprint("merge", __name__, url_prefix="/merge")
+bp = Blueprint("merge", __name__, url_prefix="/merge-pdf")
 
 def is_pdf(name: str) -> bool:
     return name.lower().endswith(".pdf")

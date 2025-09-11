@@ -12,7 +12,7 @@ from reportlab.lib.utils import ImageReader
 from PIL import Image, ImageDraw, ImageFont
 
 from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase.ttfonts import TTFont, TTFError
 
 bp = Blueprint("sign", __name__, url_prefix="/sign")
 
@@ -22,20 +22,76 @@ DEFAULT_FONT_PATH = os.path.abspath(
 FONT_PATH = os.environ.get("SIGNATURE_FONT_PATH", DEFAULT_FONT_PATH)
 
 _SIGNATURE_FONT_NAME = "SignatureFont__custom"
+_FONT_REGISTERED = False
 
-def ensure_signature_font_registered():
-    """Register the TTF with ReportLab once; no-op if already registered."""
-    try:
-        if _SIGNATURE_FONT_NAME not in pdfmetrics.getRegisteredFontNames():
-            if not os.path.exists(FONT_PATH):
-                raise FileNotFoundError(f"Signature font not found at {FONT_PATH}")
-                print(f"[SIGN] Could not register fonts ({FONT_PATH}): {e}. Falling back to Helvetica.")
-            pdfmetrics.registerFont(TTFont(_SIGNATURE_FONT_NAME, FONT_PATH))
+def _candidate_font_paths():
+    import os
+    here = os.path.dirname(__file__)                           # /app/yourapp/tools/sign
+    yourapp_root = os.path.abspath(os.path.join(here, "..", ".."))  # /app/yourapp
+    return [
+        os.environ.get("SIGNATURE_FONT_PATH"),                          # env override
+        os.path.join(yourapp_root, "assets", "fonts", "Signature.ttf"), # default
+        # common alternates (in case filename differs)
+        os.path.join(yourapp_root, "assets", "fonts", "GreatVibes-Regular.ttf"),
+        os.path.join(yourapp_root, "assets", "fonts", "DancingScript-Regular.ttf"),
+        # absolute fallbacks (Render app root)
+        "/app/yourapp/assets/fonts/Signature.ttf",
+        "/app/yourapp/assets/fonts/GreatVibes-Regular.ttf",
+        "/app/yourapp/assets/fonts/DancingScript-Regular.ttf",
+        "/app/assets/fonts/Signature.ttf",
+        "/app/assets/fonts/GreatVibes-Regular.ttf",
+        "/app/assets/fonts/DancingScript-Regular.ttf",
+    ]
+
+def ensure_signature_font_registered() -> str:
+    """
+    Find and register a static TTF for the signature. Returns the font name to use.
+    Raises FileNotFoundError if no font file is found, or TTFError if the file is invalid.
+    """
+    import os, sys
+    global _FONT_REGISTERED
+
+    print("[SIGN] ensure_signature_font_registered() called", flush=True)
+    print(f"[SIGN] CWD={os.getcwd()}", flush=True)
+    print(f"[SIGN] __file__ dir={os.path.dirname(__file__)}", flush=True)
+    print(f"[SIGN] Env SIGNATURE_FONT_PATH={os.environ.get('SIGNATURE_FONT_PATH')}", flush=True)
+
+    # Already registered in this process?
+    if _FONT_REGISTERED or _SIGNATURE_FONT_NAME in pdfmetrics.getRegisteredFontNames():
+        print(f"[SIGN] Font already registered: {_SIGNATURE_FONT_NAME}", flush=True)
         return _SIGNATURE_FONT_NAME
+
+    # Pick the first existing candidate
+    candidates = [p for p in _candidate_font_paths() if p]
+    chosen = None
+    for p in candidates:
+        if os.path.exists(p):
+            chosen = p
+            break
+
+    if not chosen:
+        msg = (
+            "Signature font file not found. "
+            "Set SIGNATURE_FONT_PATH env var or add a static TTF at yourapp/assets/fonts/Signature.ttf"
+        )
+        print(f"[SIGN] {msg}", flush=True)
+        raise FileNotFoundError(msg)
+
+    print(f"[SIGN] Using font path: {chosen}", flush=True)
+
+    # Register the TTF (must be a static TTF, not a VariableFont)
+    try:
+        pdfmetrics.registerFont(TTFont(_SIGNATURE_FONT_NAME, chosen))
+        _FONT_REGISTERED = True
+        print(f"[SIGN] Registered TTF: {_SIGNATURE_FONT_NAME}", flush=True)
+        return _SIGNATURE_FONT_NAME
+    except TTFError as e:
+        # Typically happens with variable fonts or corrupt files
+        print(f"[SIGN] TTFError registering font ({chosen}): {e}", flush=True)
+        raise
     except Exception as e:
-        # As a last resort, fall back to Helvetica (will look non-cursive)
-        print(f"[SIGN] Could not register font ({FONT_PATH}): {e}. Falling back to Helvetica.")
-        return "Helvetica"
+        print(f"[SIGN] Unexpected error registering font ({chosen}): {e}", flush=True)
+        raise
 
 def is_pdf(name: str) -> bool:
     return name.lower().endswith(".pdf")
@@ -82,6 +138,9 @@ def make_signature_png(full_name: str, px_width: int = 800, px_height: int = 220
     return img
 
 def paste_signature_on_pdf(
+        
+    font_name = ensure_signature_font_registered()
+    
     pdf_path: str,
     placements: List[Dict[str, Any]],
     full_name: str,
@@ -94,8 +153,6 @@ def paste_signature_on_pdf(
     """
     reader = PdfReader(pdf_path)
     writer = PdfWriter()
-
-    font_name = ensure_signature_font_registered()
 
     # Group placements by page
     by_page: Dict[int, List[Tuple[float, float]]] = {}

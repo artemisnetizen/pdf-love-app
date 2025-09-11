@@ -11,10 +11,30 @@ from reportlab.lib.pagesizes import letter  # placeholder; will use real page si
 from reportlab.lib.utils import ImageReader
 from PIL import Image, ImageDraw, ImageFont
 
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
 bp = Blueprint("sign", __name__, url_prefix="/sign")
 
-# Put a cursive TTF into your repo, e.g. assets/fonts/Signature.ttf (Great Vibes / Dancing Script)
-FONT_PATH = os.environ.get("SIGNATURE_FONT_PATH", os.path.join(os.path.dirname(__file__), "..", "..", "assets", "fonts", "Signature.ttf"))
+DEFAULT_FONT_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "assets", "fonts", "Signature.ttf")
+)
+FONT_PATH = os.environ.get("SIGNATURE_FONT_PATH", DEFAULT_FONT_PATH)
+
+_SIGNATURE_FONT_NAME = "SignatureFont__custom"
+
+def ensure_signature_font_registered():
+    """Register the TTF with ReportLab once; no-op if already registered."""
+    try:
+        if _SIGNATURE_FONT_NAME not in pdfmetrics.getRegisteredFontNames():
+            if not os.path.exists(FONT_PATH):
+                raise FileNotFoundError(f"Signature font not found at {FONT_PATH}")
+            pdfmetrics.registerFont(TTFont(_SIGNATURE_FONT_NAME, FONT_PATH))
+        return _SIGNATURE_FONT_NAME
+    except Exception as e:
+        # As a last resort, fall back to Helvetica (will look non-cursive)
+        print(f"[SIGN] Could not register font ({FONT_PATH}): {e}. Falling back to Helvetica.")
+        return "Helvetica"
 
 def is_pdf(name: str) -> bool:
     return name.lower().endswith(".pdf")
@@ -67,18 +87,14 @@ def paste_signature_on_pdf(
     sig_width_pt: float,
 ) -> bytes:
     """
-    placements: list of {page_index, x_norm, y_norm}
-    x_norm, y_norm are 0..1 in *viewer* top-left origin.
-    We convert to PDF coords (bottom-left), scale by page size.
-    sig_width_pt: width in PDF points (1/72 inch).
+    Draw the signature as vector text (no PNG) using the embedded TTF.
+    placements: list of {page_index, x_norm, y_norm} with top-left normalized coords (0..1).
+    sig_width_pt: target text width in PDF points.
     """
     reader = PdfReader(pdf_path)
     writer = PdfWriter()
 
-    # Prepare a reusable PNG for the signature at high resolution
-    # We'll scale it in reportlab to sig_width_pt
-    sig_png = make_signature_png(full_name)
-    sig_reader = ImageReader(sig_png)
+    font_name = ensure_signature_font_registered()
 
     # Group placements by page
     by_page: Dict[int, List[Tuple[float, float]]] = {}
@@ -96,35 +112,47 @@ def paste_signature_on_pdf(
         page_w = float(media.width)
         page_h = float(media.height)
 
-        # If this page needs signatures, create an overlay PDF and merge
         if page_index in by_page and by_page[page_index]:
-            # Compute signature height preserving aspect ratio
-            sig_w_px, sig_h_px = sig_png.size
-            aspect = sig_h_px / sig_w_px if sig_w_px else 0.3
-            sig_h_pt = sig_width_pt * aspect
-
-            # Create overlay PDF in memory with the same page size
             overlay_bytes = io.BytesIO()
             c = canvas.Canvas(overlay_bytes, pagesize=(page_w, page_h))
 
+            # Compute a font size that fits the requested width
+            # Try from a large size down until stringWidth <= sig_width_pt
+            candidate_size = 120
+            txt = full_name.strip() or "Signature"
+            # Guard against zero width string
+            string_w = pdfmetrics.stringWidth(txt, font_name, candidate_size) or 1.0
+            if string_w < sig_width_pt:
+                # scale up proportionally
+                candidate_size = max(10, candidate_size * (sig_width_pt / string_w))
+
+            # refine to not exceed
+            for _ in range(12):
+                w = pdfmetrics.stringWidth(txt, font_name, candidate_size)
+                if w <= sig_width_pt or candidate_size <= 10:
+                    break
+                candidate_size -= max(1, candidate_size * 0.08)
+
+            c.setFont(font_name, candidate_size)
+            # Optional: darker gray looks more “ink-like”
+            c.setFillGray(0.1)
+
+            # approximate ascent to convert top-left to baseline Y
+            ascent_approx = candidate_size * 0.80
+
             for (x_norm, y_norm) in by_page[page_index]:
-                # Convert normalized top-left coords to PDF bottom-left coords
                 x_pt = x_norm * page_w
                 y_top_pt = y_norm * page_h
-                y_pt = page_h - y_top_pt - sig_h_pt  # top-left -> bottom-left, then shift by height
-
-                # Draw signature image
-                c.drawImage(sig_reader, x_pt, y_pt, width=sig_width_pt, height=sig_h_pt, mask='auto')
+                # convert to baseline (PDF origin bottom-left)
+                y_baseline = page_h - y_top_pt - (candidate_size - (candidate_size - ascent_approx))
+                c.drawString(x_pt, y_baseline, txt)
 
             c.save()
             overlay_bytes.seek(0)
 
-            # Merge overlay onto current page
             overlay_pdf = PdfReader(overlay_bytes)
-            overlay_page = overlay_pdf.pages[0]
-            page.merge_page(overlay_page)
+            page.merge_page(overlay_pdf.pages[0])
 
-        # Add (possibly modified) page to writer
         writer.add_page(page)
 
     out = io.BytesIO()
